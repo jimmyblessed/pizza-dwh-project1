@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Virtual Environment
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Логи
+*.log
+logs/
+
+# Данные (НЕ пушим!)
+data/
+*.csv
+*.parquet
+
+# Секреты (НИКОГДА!)
+.env
+secrets/
+*.key
+*.pem
+
+# Docker
+*.pid
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Airflow
+step_3_airflow/logs/
+step_3_airflow/__pycache__/
+
+# Spark
+checkpoint*/
+spark-warehouse/
+
+# Jupyter
+.ipynb_checkpoints/

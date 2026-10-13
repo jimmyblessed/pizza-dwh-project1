@@ -1,0 +1,135 @@
+
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.9.1
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://admin:admin123@postgres:5432/airflow
+    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'true'
+    DB_HOST: pizza_postgres
+  volumes:
+    - ./step_3_airflow/dags:/opt/airflow/dags
+    - ./step_3_airflow/logs:/opt/airflow/logs
+    - ./step_3_airflow/plugins:/opt/airflow/plugins
+    - ./step_0_generator:/opt/airflow/scripts
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: pizza_postgres
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin123
+      POSTGRES_DB: pizza_dwh
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "admin"]
+      interval: 5s
+      retries: 5
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: airflow_init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db init
+        airflow users create \
+          --username admin \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@example.com \
+          --password admin
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: airflow_webserver
+    command: webserver
+    ports:
+      - "8080:8080"
+    restart: always
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: airflow_scheduler
+    command: scheduler
+    restart: always
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: pizza_zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: pizza_kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+  kafka-ui:
+    image: kafbat/kafka-ui:latest
+    container_name: pizza_kafka_ui
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092    # ← ПРОВЕРЬ ЭТУ СТРОКУ
+    depends_on:
+      - kafka    
+  spark:
+    image: apache/spark:3.5.1-python3
+    container_name: pizza_spark
+    environment:
+      - SPARK_NO_DAEMONIZE=true
+    ports:
+      - "8081:8080"
+      - "7077:7077"
+    volumes:
+      - ./step_5_spark:/opt/spark-apps
+    command: /opt/spark/sbin/start-master.sh
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    container_name: pizza_clickhouse
+    ports:
+      - "8123:8123"     # HTTP (для Python)
+      - "9000:9000"     # Native (для клиента)
+    environment:
+      CLICKHOUSE_USER: admin
+      CLICKHOUSE_PASSWORD: admin123
+      CLICKHOUSE_DB: pizza_analytics
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse   
+volumes:
+  postgres_data:
+  clickhouse_data:
+  kafka_data: 
